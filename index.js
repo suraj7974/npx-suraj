@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { stripVTControlCharacters } from "node:util";
 import readline from "node:readline";
 import figlet from "figlet";
 import gradient from "gradient-string";
 import boxen from "boxen";
 import chalk from "chalk";
+import { avatar } from "./avatar.js";
 
 const portfolioGradient = gradient([
   "#4A90E2",
@@ -57,7 +59,6 @@ const buildCard = () => {
 
   return boxen(lines.join("\n"), {
     padding: 1,
-    margin: { top: 1, bottom: 1 },
     borderStyle: "round",
     borderColor: "#7B68EE",
     title: " hey there ",
@@ -73,14 +74,34 @@ const menu = [
   { key: "q", text: "Quit" },
 ];
 
+const menuLines = () => [
+  chalk.bold("  What would you like to do?"),
+  "",
+  ...menu.map((item) => `  ${accent(`[${item.key}]`)} ${item.text}`),
+];
+
+// Portrait to the right of the card when it fits, otherwise stacked above it
+const layout = (left, right, gap = 3) => {
+  const width = (lines) =>
+    Math.max(...lines.map((l) => stripVTControlCharacters(l).length));
+  const leftWidth = width(left);
+  const columns = process.stdout.columns || 80;
+
+  if (columns < leftWidth + gap + width(right)) {
+    return [...right, "", ...left];
+  }
+
+  const rows = Math.max(left.length, right.length);
+  const topPad = Math.floor((rows - left.length) / 2);
+  return Array.from({ length: rows }, (_, i) => {
+    const l = left[i - topPad] ?? "";
+    const pad = leftWidth - stripVTControlCharacters(l).length + gap;
+    return l + " ".repeat(pad) + (right[i] ?? "");
+  });
+};
+
 const runMenu = () =>
   new Promise((resolve) => {
-    console.log(chalk.bold("  What would you like to do?\n"));
-    for (const item of menu) {
-      console.log(`  ${accent(`[${item.key}]`)} ${item.text}`);
-    }
-    console.log();
-
     readline.emitKeypressEvents(process.stdin);
     process.stdin.setRawMode(true);
     process.stdin.resume();
@@ -108,9 +129,14 @@ const main = async () => {
   const ascii = figlet.textSync(me.name, { font: "ANSI Shadow" });
   console.log(portfolioGradient.multiline(ascii));
 
-  console.log(buildCard());
+  const interactive = process.stdin.isTTY && process.stdout.isTTY;
+  const left = buildCard().split("\n");
+  if (interactive) left.push("", ...menuLines());
 
-  if (process.stdin.isTTY && process.stdout.isTTY) {
+  const portrait = portfolioGradient.multiline(avatar.join("\n")).split("\n");
+  console.log("\n" + layout(left, portrait).join("\n") + "\n");
+
+  if (interactive) {
     await runMenu();
   }
 
